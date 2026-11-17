@@ -1,0 +1,483 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SparkleFind · Car Washes Near You</title>
+<meta name="description" content="Find car washes within 5 km of your location.">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #f4f7fb;
+    --surface: #ffffff;
+    --surface-2: #eef3f9;
+    --text: #0f1b2d;
+    --muted: #5b6b82;
+    --border: #dbe3ee;
+    --brand: #0b6bff;
+    --brand-2: #00b4d8;
+    --brand-ink: #ffffff;
+    --accent: #e8f1ff;
+    --ok: #12a150;
+    --warn: #c77700;
+    --shadow: 0 1px 2px rgba(15,27,45,.06), 0 8px 24px rgba(15,27,45,.06);
+    --radius: 14px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0b1220; --surface: #121b2e; --surface-2: #18233a; --text: #e8eef8;
+      --muted: #93a3bb; --border: #26334d; --brand: #4d94ff; --brand-2: #22c7e6;
+      --accent: #1a2a48; --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.3);
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0b1220; --surface: #121b2e; --surface-2: #18233a; --text: #e8eef8;
+    --muted: #93a3bb; --border: #26334d; --brand: #4d94ff; --brand-2: #22c7e6;
+    --accent: #1a2a48; --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.3);
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    background: var(--bg); color: var(--text);
+    font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    line-height: 1.45; -webkit-font-smoothing: antialiased;
+  }
+  a { color: var(--brand); }
+  button, input { font: inherit; }
+
+  /* Header / hero */
+  header.hero {
+    background: linear-gradient(135deg, var(--brand) 0%, var(--brand-2) 100%);
+    color: #fff; padding: 20px 16px 28px; position: relative; overflow: hidden;
+  }
+  header.hero::after { /* soap bubbles */
+    content: ""; position: absolute; inset: 0; pointer-events: none; opacity: .18;
+    background:
+      radial-gradient(circle at 85% 20%, #fff 0 22px, transparent 23px),
+      radial-gradient(circle at 92% 60%, #fff 0 12px, transparent 13px),
+      radial-gradient(circle at 75% 75%, #fff 0 30px, transparent 31px),
+      radial-gradient(circle at 65% 15%, #fff 0 8px, transparent 9px);
+  }
+  .wrap { max-width: 1200px; margin: 0 auto; }
+  .brandbar { display: flex; align-items: center; gap: 10px; font-weight: 800; font-size: 1.15rem; }
+  .brandbar svg { width: 28px; height: 28px; }
+  .hero h1 { font-size: clamp(1.6rem, 4vw, 2.4rem); margin: 18px 0 6px; letter-spacing: -.02em; }
+  .hero p.sub { margin: 0 0 18px; opacity: .92; max-width: 560px; }
+
+  .search {
+    display: flex; gap: 8px; flex-wrap: wrap; position: relative; z-index: 1;
+    background: rgba(255,255,255,.14); padding: 8px; border-radius: 16px; max-width: 720px;
+    backdrop-filter: blur(4px);
+  }
+  .search input {
+    flex: 1 1 240px; min-width: 0; border: 0; border-radius: 10px; padding: 12px 14px;
+    background: #fff; color: #0f1b2d; outline: none;
+  }
+  .search input:focus { box-shadow: 0 0 0 3px rgba(255,255,255,.6); }
+  .btn {
+    border: 0; border-radius: 10px; padding: 12px 16px; cursor: pointer; font-weight: 600;
+    display: inline-flex; align-items: center; gap: 8px; white-space: nowrap;
+  }
+  .btn svg { width: 18px; height: 18px; }
+  .btn-light { background: #fff; color: var(--brand); }
+  .btn-dark { background: #0f1b2d; color: #fff; }
+  .btn:disabled { opacity: .6; cursor: progress; }
+  .btn:focus-visible { outline: 3px solid #fff; outline-offset: 2px; }
+
+  /* Main layout */
+  main { padding: 20px 16px 40px; }
+  .status {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+    margin-bottom: 14px;
+  }
+  .status h2 { margin: 0; font-size: 1.15rem; }
+  .status .where { color: var(--muted); font-size: .92rem; }
+  .chips { display: flex; gap: 6px; flex-wrap: wrap; }
+  .chip {
+    border: 1px solid var(--border); background: var(--surface); color: var(--text);
+    padding: 7px 12px; border-radius: 999px; cursor: pointer; font-size: .88rem; font-weight: 500;
+  }
+  .chip[aria-pressed="true"] { background: var(--brand); border-color: var(--brand); color: #fff; }
+  .chip .n { opacity: .7; margin-left: 4px; }
+
+  .grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr); gap: 16px; align-items: start; }
+  @media (max-width: 860px) { .grid { grid-template-columns: 1fr; } .mapcard { order: -1; } }
+
+  .mapcard {
+    position: sticky; top: 16px; background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); overflow: hidden; box-shadow: var(--shadow);
+  }
+  #map { height: min(70vh, 620px); width: 100%; background: var(--surface-2); }
+  @media (max-width: 860px) { .mapcard { position: static; } #map { height: 340px; } }
+
+  .list { display: flex; flex-direction: column; gap: 10px; }
+  .card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 14px 16px; box-shadow: var(--shadow); cursor: pointer;
+    transition: border-color .15s, transform .15s;
+    display: grid; grid-template-columns: auto 1fr auto; gap: 12px; align-items: start;
+  }
+  .card:hover, .card.active { border-color: var(--brand); }
+  .card.active { transform: translateX(2px); }
+  .card:focus-visible { outline: 3px solid var(--brand); outline-offset: 2px; }
+  .rank {
+    width: 32px; height: 32px; border-radius: 50%; background: var(--accent); color: var(--brand);
+    display: grid; place-items: center; font-weight: 700; font-size: .9rem;
+  }
+  .card h3 { margin: 0 0 2px; font-size: 1rem; overflow-wrap: anywhere; }
+  .meta { color: var(--muted); font-size: .86rem; overflow-wrap: anywhere; }
+  .tags { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+  .tag { font-size: .75rem; padding: 3px 8px; border-radius: 6px; background: var(--surface-2); color: var(--muted); font-weight: 500; }
+  .tag.ok { color: var(--ok); }
+  .dist { text-align: right; }
+  .dist b { display: block; font-size: 1.05rem; }
+  .dist span { color: var(--muted); font-size: .78rem; }
+  .actions { display: flex; gap: 12px; margin-top: 10px; flex-wrap: wrap; }
+  .actions a { font-size: .86rem; font-weight: 600; text-decoration: none; }
+  .actions a:hover { text-decoration: underline; }
+
+  .empty {
+    background: var(--surface); border: 1px dashed var(--border); border-radius: var(--radius);
+    padding: 28px 20px; text-align: center; color: var(--muted);
+  }
+  .empty h3 { color: var(--text); margin: 6px 0; }
+  .skeleton { height: 92px; border-radius: var(--radius); background: linear-gradient(90deg, var(--surface) 0%, var(--surface-2) 50%, var(--surface) 100%); background-size: 200% 100%; animation: shimmer 1.2s infinite; border: 1px solid var(--border); }
+  @keyframes shimmer { to { background-position: -200% 0; } }
+
+  footer { color: var(--muted); font-size: .8rem; text-align: center; padding: 0 16px 28px; }
+
+  /* Leaflet tweaks */
+  .leaflet-popup-content { font-family: inherit; }
+  .pin {
+    width: 30px; height: 30px; border-radius: 50% 50% 50% 0; transform: rotate(-45deg);
+    background: var(--brand); border: 2px solid #fff; box-shadow: 0 2px 6px rgba(0,0,0,.35);
+    display: grid; place-items: center;
+  }
+  .pin span { transform: rotate(45deg); color: #fff; font-weight: 700; font-size: 12px; }
+  .pin.hl { background: #ff6b00; }
+  .me { width: 18px; height: 18px; border-radius: 50%; background: #ff3b5c; border: 3px solid #fff; box-shadow: 0 0 0 6px rgba(255,59,92,.25); }
+</style>
+</head>
+<body>
+<header class="hero">
+  <div class="wrap">
+    <div class="brandbar">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M5 17h14l-1.5-5.5A2 2 0 0 0 15.6 10H8.4a2 2 0 0 0-1.9 1.5Z"/><circle cx="7.5" cy="17.5" r="1.5"/><circle cx="16.5" cy="17.5" r="1.5"/>
+        <path d="M8 6c0-1 .7-2 1.5-3 .8 1 1.5 2 1.5 3a1.5 1.5 0 0 1-3 0Z"/><path d="M14 5.5c0-.7.5-1.4 1-2 .5.6 1 1.3 1 2a1 1 0 0 1-2 0Z"/>
+      </svg>
+      SparkleFind
+    </div>
+    <h1>Car washes within 5&nbsp;km</h1>
+    <p class="sub">Use your current location or search any address to see every car wash nearby, sorted by distance.</p>
+    <form class="search" id="searchForm" autocomplete="off">
+      <input id="q" type="search" placeholder="Enter an address, city or postcode" aria-label="Address, city or postcode">
+      <button class="btn btn-dark" type="submit" id="searchBtn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+        Search
+      </button>
+      <button class="btn btn-light" type="button" id="locBtn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/><circle cx="12" cy="12" r="7"/></svg>
+        Use my location
+      </button>
+    </form>
+  </div>
+</header>
+
+<main class="wrap">
+  <div class="status">
+    <div>
+      <h2 id="title">Find a car wash near you</h2>
+      <div class="where" id="where">Choose a location to get started.</div>
+    </div>
+    <div class="chips" id="chips" role="group" aria-label="Filter by type"></div>
+  </div>
+
+  <div class="grid">
+    <section class="list" id="list" aria-live="polite">
+      <div class="empty">
+        <h3>No location yet</h3>
+        <p>Tap <b>Use my location</b> or search for an address above.</p>
+      </div>
+    </section>
+    <div class="mapcard"><div id="map" role="region" aria-label="Map of nearby car washes"></div></div>
+  </div>
+</main>
+
+<footer>
+  Car wash data © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a>, via the Overpass API. Address search by Nominatim.
+</footer>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>
+(() => {
+  const RADIUS_M = 5000;
+  const OVERPASS = [
+    "https://overpass-api.de/api/interpreter",
+    "https://overpass.kumi.systems/api/interpreter",
+    "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
+  ];
+  const NOMINATIM = "https://nominatim.openstreetmap.org/search";
+
+  const $ = (id) => document.getElementById(id);
+  const els = { list: $("list"), title: $("title"), where: $("where"), chips: $("chips"),
+                q: $("q"), form: $("searchForm"), loc: $("locBtn"), search: $("searchBtn") };
+
+  // ---------- Map ----------
+  const map = L.map("map", { zoomControl: true }).setView([20, 0], 2);
+  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    maxZoom: 19, attribution: "© OpenStreetMap contributors",
+  }).addTo(map);
+  const layer = L.layerGroup().addTo(map);
+  let markers = new Map();
+
+  // ---------- State ----------
+  let state = { center: null, label: "", results: [], filter: "all", active: null };
+
+  const FILTERS = [
+    { id: "all",       label: "All",          test: () => true },
+    { id: "automatic", label: "Automatic",    test: (w) => w.types.includes("Automatic") },
+    { id: "self",      label: "Self-service", test: (w) => w.types.includes("Self-service") },
+    { id: "hand",      label: "Hand wash",    test: (w) => w.types.includes("Hand wash") },
+    { id: "24h",       label: "Open 24/7",    test: (w) => w.is247 },
+  ];
+
+  // ---------- Helpers ----------
+  const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
+
+  function haversine(a, b) {
+    const R = 6371000, toRad = (d) => d * Math.PI / 180;
+    const dLat = toRad(b.lat - a.lat), dLon = toRad(b.lon - a.lon);
+    const h = Math.sin(dLat/2)**2 + Math.cos(toRad(a.lat)) * Math.cos(toRad(b.lat)) * Math.sin(dLon/2)**2;
+    return 2 * R * Math.asin(Math.sqrt(h));
+  }
+  const fmtDist = (m) => m < 1000 ? `${Math.round(m / 10) * 10} m` : `${(m / 1000).toFixed(1)} km`;
+  const driveMin = (m) => Math.max(1, Math.round((m * 1.3) / 1000 / 30 * 60)); // ~30 km/h city, 1.3 road factor
+
+  function describe(el, center) {
+    const t = el.tags || {};
+    const lat = el.lat ?? el.center?.lat, lon = el.lon ?? el.center?.lon;
+    const types = [];
+    if (t.automated === "yes" || /automat|tunnel|rollover/i.test(t.car_wash || "")) types.push("Automatic");
+    if (t.self_service === "yes" || /self/i.test(t.car_wash || "")) types.push("Self-service");
+    if (t.self_service === "no" && t.automated !== "yes" || /hand/i.test((t.car_wash || "") + (t.name || ""))) types.push("Hand wash");
+    const addr = [
+      [t["addr:housenumber"], t["addr:street"]].filter(Boolean).join(" "),
+      t["addr:city"] || t["addr:suburb"],
+    ].filter(Boolean).join(", ");
+    const hours = t.opening_hours || "";
+    return {
+      id: `${el.type}/${el.id}`, lat, lon,
+      name: t.name || t.brand || t.operator || "Car wash",
+      brand: t.brand && t.name && t.brand !== t.name ? t.brand : "",
+      addr, hours, is247: /^24\/7$/.test(hours.trim()),
+      phone: t.phone || t["contact:phone"] || "",
+      website: t.website || t["contact:website"] || "",
+      fee: t.fee, payment: Object.keys(t).filter(k => k.startsWith("payment:") && t[k] === "yes").map(k => k.slice(8)),
+      types: [...new Set(types)],
+      dist: haversine(center, { lat, lon }),
+    };
+  }
+
+  async function fetchCarWashes(center) {
+    const q = `[out:json][timeout:25];
+      nwr["amenity"="car_wash"](around:${RADIUS_M},${center.lat},${center.lon});
+      out center tags;`;
+    let lastErr;
+    for (const url of OVERPASS) {
+      try {
+        const res = await fetch(url, { method: "POST", body: "data=" + encodeURIComponent(q),
+          headers: { "Content-Type": "application/x-www-form-urlencoded" } });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const json = await res.json();
+        return json.elements
+          .map((el) => describe(el, center))
+          .filter((w) => w.lat != null && w.dist <= RADIUS_M)
+          .sort((a, b) => a.dist - b.dist);
+      } catch (e) { lastErr = e; }
+    }
+    throw lastErr || new Error("No data source reachable");
+  }
+
+  async function geocode(query) {
+    const url = `${NOMINATIM}?format=json&limit=1&q=${encodeURIComponent(query)}`;
+    const res = await fetch(url, { headers: { "Accept": "application/json" } });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const [hit] = await res.json();
+    if (!hit) throw new Error("not-found");
+    return { lat: +hit.lat, lon: +hit.lon, label: hit.display_name };
+  }
+
+  // ---------- Rendering ----------
+  function setBusy(busy) {
+    els.loc.disabled = busy; els.search.disabled = busy;
+    if (busy) els.list.innerHTML = '<div class="skeleton"></div>'.repeat(4);
+  }
+
+  function showMessage(title, body) {
+    els.list.innerHTML = `<div class="empty"><h3>${esc(title)}</h3><p>${body}</p></div>`;
+  }
+
+  function renderChips() {
+    els.chips.innerHTML = FILTERS.map((f) => {
+      const n = state.results.filter(f.test).length;
+      if (f.id !== "all" && n === 0) return "";
+      return `<button class="chip" data-f="${f.id}" aria-pressed="${state.filter === f.id}">${f.label}<span class="n">${n}</span></button>`;
+    }).join("");
+  }
+
+  function dirUrl(w) {
+    const o = state.center;
+    return `https://www.google.com/maps/dir/?api=1&origin=${o.lat},${o.lon}&destination=${w.lat},${w.lon}`;
+  }
+
+  function cardHtml(w, i) {
+    const tags = [
+      ...w.types.map((t) => `<span class="tag">${esc(t)}</span>`),
+      w.is247 ? '<span class="tag ok">Open 24/7</span>' : "",
+      w.fee === "no" ? '<span class="tag ok">Free</span>' : "",
+      ...w.payment.slice(0, 3).map((p) => `<span class="tag">${esc(p.replace(/_/g, " "))}</span>`),
+    ].join("");
+    const site = w.website && /^https?:\/\//i.test(w.website) ? w.website : (w.website ? "https://" + w.website : "");
+    return `
+      <article class="card" tabindex="0" data-id="${esc(w.id)}">
+        <div class="rank">${i + 1}</div>
+        <div>
+          <h3>${esc(w.name)}</h3>
+          <div class="meta">${esc(w.addr || (w.brand ? w.brand : "Address not listed"))}</div>
+          ${w.hours && !w.is247 ? `<div class="meta">🕒 ${esc(w.hours)}</div>` : ""}
+          ${tags ? `<div class="tags">${tags}</div>` : ""}
+          <div class="actions">
+            <a href="${dirUrl(w)}" target="_blank" rel="noopener">Directions →</a>
+            ${w.phone ? `<a href="tel:${esc(w.phone.replace(/\s/g, ""))}">Call</a>` : ""}
+            ${site ? `<a href="${esc(site)}" target="_blank" rel="noopener">Website</a>` : ""}
+          </div>
+        </div>
+        <div class="dist"><b>${fmtDist(w.dist)}</b><span>~${driveMin(w.dist)} min drive</span></div>
+      </article>`;
+  }
+
+  function pinIcon(n, hl) {
+    return L.divIcon({ className: "", html: `<div class="pin${hl ? " hl" : ""}"><span>${n}</span></div>`,
+                       iconSize: [30, 30], iconAnchor: [15, 30], popupAnchor: [0, -28] });
+  }
+
+  function render() {
+    const f = FILTERS.find((x) => x.id === state.filter) || FILTERS[0];
+    const shown = state.results.filter(f.test);
+    renderChips();
+
+    els.title.textContent = state.results.length
+      ? `${shown.length} car wash${shown.length === 1 ? "" : "es"} within 5 km`
+      : "No car washes within 5 km";
+    els.where.textContent = `Near ${state.label}`;
+
+    layer.clearLayers(); markers.clear();
+    L.circle([state.center.lat, state.center.lon], { radius: RADIUS_M, color: "#0b6bff", weight: 2,
+      fillColor: "#0b6bff", fillOpacity: .06, dashArray: "6 6" }).addTo(layer);
+    L.marker([state.center.lat, state.center.lon], {
+      icon: L.divIcon({ className: "", html: '<div class="me"></div>', iconSize: [18, 18], iconAnchor: [9, 9] }),
+      zIndexOffset: 1000, title: "Your location",
+    }).bindPopup("<b>You are here</b>").addTo(layer);
+
+    if (!shown.length) {
+      showMessage(state.results.length ? "Nothing matches this filter" : "No car washes found",
+        state.results.length ? "Try a different filter." : "There are no car washes mapped within 5 km of this spot. Try another location.");
+    } else {
+      els.list.innerHTML = shown.map(cardHtml).join("");
+      shown.forEach((w, i) => {
+        const m = L.marker([w.lat, w.lon], { icon: pinIcon(i + 1), title: w.name })
+          .bindPopup(`<b>${esc(w.name)}</b><br>${fmtDist(w.dist)} away<br><a href="${dirUrl(w)}" target="_blank" rel="noopener">Directions</a>`)
+          .on("click", () => highlight(w.id, false))
+          .addTo(layer);
+        m._num = i + 1;
+        markers.set(w.id, m);
+      });
+    }
+    map.fitBounds(L.latLng(state.center.lat, state.center.lon).toBounds(RADIUS_M * 2), { padding: [10, 10] });
+  }
+
+  function highlight(id, fromList) {
+    if (state.active && markers.get(state.active)) {
+      const prev = markers.get(state.active); prev.setIcon(pinIcon(prev._num)); prev.setZIndexOffset(0);
+    }
+    state.active = id;
+    const m = markers.get(id);
+    if (m) {
+      m.setIcon(pinIcon(m._num, true)); m.setZIndexOffset(500);
+      if (fromList) { map.panTo(m.getLatLng()); m.openPopup(); }
+    }
+    document.querySelectorAll(".card").forEach((c) => c.classList.toggle("active", c.dataset.id === id));
+    if (!fromList) document.querySelector(`.card[data-id="${CSS.escape(id)}"]`)?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }
+
+  async function load(center, label) {
+    state = { ...state, center, label, active: null, filter: "all" };
+    els.title.textContent = "Searching…";
+    els.where.textContent = `Near ${label}`;
+    setBusy(true);
+    try {
+      state.results = await fetchCarWashes(center);
+      render();
+    } catch (e) {
+      console.error(e);
+      showMessage("Couldn’t load car washes", "The map data service is busy or unreachable. Please try again in a moment.");
+      els.title.textContent = "Something went wrong";
+    } finally { setBusy(false); }
+  }
+
+  // ---------- Events ----------
+  els.loc.addEventListener("click", () => {
+    if (!navigator.geolocation) return showMessage("Location unavailable", "Your browser doesn’t support geolocation. Search for an address instead.");
+    els.title.textContent = "Getting your location…";
+    setBusy(true);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => load({ lat: pos.coords.latitude, lon: pos.coords.longitude }, "your current location"),
+      (err) => {
+        setBusy(false);
+        els.title.textContent = "Find a car wash near you";
+        showMessage("Couldn’t get your location",
+          err.code === 1 ? "Location permission was denied. Allow it in your browser, or search for an address above."
+                         : "Your position couldn’t be determined. Search for an address above instead.");
+      },
+      { enableHighAccuracy: true, timeout: 12000, maximumAge: 60000 }
+    );
+  });
+
+  els.form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const q = els.q.value.trim();
+    if (!q) return els.q.focus();
+    setBusy(true);
+    els.title.textContent = "Finding that address…";
+    try {
+      const hit = await geocode(q);
+      await load({ lat: hit.lat, lon: hit.lon }, hit.label.split(",").slice(0, 3).join(","));
+    } catch (err) {
+      setBusy(false);
+      els.title.textContent = "Find a car wash near you";
+      showMessage(err.message === "not-found" ? "Address not found" : "Search failed",
+        err.message === "not-found" ? `We couldn’t find “${esc(q)}”. Try adding a city or postcode.` : "The address service is unreachable right now. Try again shortly.");
+    }
+  });
+
+  els.chips.addEventListener("click", (e) => {
+    const b = e.target.closest(".chip"); if (!b) return;
+    state.filter = b.dataset.f; state.active = null; render();
+  });
+
+  els.list.addEventListener("click", (e) => {
+    if (e.target.closest("a")) return;
+    const c = e.target.closest(".card"); if (c) highlight(c.dataset.id, true);
+  });
+  els.list.addEventListener("keydown", (e) => {
+    if (e.key !== "Enter" && e.key !== " ") return;
+    const c = e.target.closest(".card"); if (c && e.target === c) { e.preventDefault(); highlight(c.dataset.id, true); }
+  });
+})();
+</script>
+</body>
+</html>
